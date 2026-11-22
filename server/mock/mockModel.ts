@@ -101,7 +101,7 @@ export function createMockModel(): LanguageModel {
   return new MockLanguageModelV4({
     doGenerate: async (options) => {
       const { task, first, toolResults, last } = promptText(options.prompt);
-      await new Promise((r) => setTimeout(r, 150));
+      await new Promise((r) => setTimeout(r, Number(process.env.MOCK_DELAY_MS || 150)));
       if (task === 'learn_explore' || task === 'explore_flow') {
         if (toolResults === 0) return call('navigate', { url: '/' });
         if (toolResults === 1) return call('snapshot', {});

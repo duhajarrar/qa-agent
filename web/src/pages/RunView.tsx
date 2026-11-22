@@ -62,6 +62,17 @@ function useYourTurnAlerts(state: PublicRunState | null) {
   useEffect(() => () => { document.title = 'QA Agent — Find the bugs before your users do'; }, []);
 }
 
+/** Re-renders every second so waiting times count up live. */
+function useNow(active: boolean) {
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    if (!active) return;
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [active]);
+  return now;
+}
+
 function fmt(ms: number) {
   const s = Math.floor(ms / 1000);
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
@@ -84,6 +95,10 @@ export function RunView({ id }: { id: string }) {
   const [confirmStop, setConfirmStop] = useState(false);
   const [notify, setNotify] = useState(() => 'Notification' in window && Notification.permission === 'granted');
   useYourTurnAlerts(state);
+  const now = useNow(!!state && ['running', 'queued'].includes(state.status));
+  // Server and browser clocks can differ, so measure the wait with the browser's own clock.
+  const waitSeen = useRef<{ key: number | null; at: number }>({ key: null, at: 0 });
+  if (state && state.aiWaitingSince !== waitSeen.current.key) waitSeen.current = { key: state.aiWaitingSince, at: Date.now() };
 
   if (missing) {
     return (
@@ -103,6 +118,7 @@ export function RunView({ id }: { id: string }) {
   const fail = cases.filter((c) => c.status === 'fail').length;
   const showResults = phaseIdx >= 2 && cases.length > 0;
   const send = async (a: CheckpointAnswer) => { await api.answer(id, state.checkpoint!.id, a).catch(() => {}); };
+  const aiWait = state.status === 'running' && state.aiWaitingSince ? Math.max(0, now - waitSeen.current.at) : null;
   const liveState = state.status === 'waiting' ? 'paused' : finished || state.status === 'queued' ? 'off' : 'live';
 
   return (
@@ -158,6 +174,15 @@ export function RunView({ id }: { id: string }) {
               <button type="button" className="btn primary" onClick={() => navigate('/')}>Start a new test</button></div>
           )}
 
+          {state.status === 'running' && !state.checkpoint && !showResults && (
+            <div className="card row rise" style={{ flexWrap: 'nowrap', alignItems: 'flex-start' }}>
+              <span className="spinner" style={{ marginTop: 4 }} />
+              <div>
+                <b>{{ learn: 'Learning your product: exploring the website and reading your documents.', plan: 'Planning the tests.', test: 'Running the tests.', report: 'Writing the bug reports and the final report.' }[state.phase]}</b>
+                <div className="small muted">The live view and the box on the right show every step. Keep this tab open: it beeps when it needs you.</div>
+              </div>
+            </div>
+          )}
           {state.checkpoint && <CheckpointCard key={state.checkpoint.id} cp={state.checkpoint} send={send} />}
 
           {state.reportReady && (
@@ -254,7 +279,17 @@ export function RunView({ id }: { id: string }) {
               <span className={`live-dot ${liveState === 'live' ? '' : liveState}`} />
               {state.status === 'waiting' ? 'Paused — waiting for you' : state.status === 'queued' ? 'In line' : finished ? (state.status === 'done' ? 'Finished' : 'Stopped') : 'Live'}
             </span>
-            <span style={{ fontWeight: 600 }}>{state.status === 'waiting' ? state.checkpoint?.title : finished ? state.activity.at(-1)?.text : state.live.action || state.activity.at(-1)?.text || 'Starting…'}</span>
+            <span style={{ fontWeight: 600 }}>{state.status === 'waiting' ? state.checkpoint?.title : finished ? state.activity.at(-1)?.text : aiWait !== null ? 'Waiting for the AI to answer…' : state.live.action || state.activity.at(-1)?.text || 'Starting…'}</span>
+            {aiWait !== null && (
+              <span className="tiny" style={{ color: aiWait > 60_000 ? '#ffcfbf' : '#cfc8ee' }}>
+                {fmt(aiWait)}{aiWait > 60_000 ? ' · Slower than usual: the AI provider may be busy. It will retry or stop with a clear message, so you never wait forever.' : ' · This is normal: each step takes the AI a few seconds.'}
+              </span>
+            )}
+            {state.status === 'running' && (
+              <span className="tiny" style={{ color: '#cfc8ee' }}>
+                AI used {(state.usage.inputTokens + state.usage.outputTokens).toLocaleString()} tokens so far
+              </span>
+            )}
           </div>
           <details className="card" style={{ padding: '18px 22px' }} open={!state.checkpoint && !showResults}>
             <summary>What I've done so far</summary>

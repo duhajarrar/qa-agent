@@ -58,6 +58,7 @@ export class Run extends EventEmitter {
       bugs: [],
       live: { url: '', action: '' },
       usage: { inputTokens: 0, outputTokens: 0 },
+      aiWaitingSince: null,
       error: null,
       reportReady: false,
       verdict: null,
@@ -99,6 +100,11 @@ export class Run extends EventEmitter {
 
   live(action: string, url: string) {
     this.state.live = { action: this.mask(action), url };
+    this.changed();
+  }
+
+  aiWaiting(on: boolean) {
+    this.state.aiWaitingSince = on ? Date.now() : null;
     this.changed();
   }
 

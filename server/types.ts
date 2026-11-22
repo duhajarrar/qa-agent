@@ -152,6 +152,7 @@ export interface PublicRunState {
   bugs: Bug[];
   live: { url: string; action: string };
   usage: { inputTokens: number; outputTokens: number };
+  aiWaitingSince: number | null; // set while a request to the AI provider is in flight
   error: string | null;
   reportReady: boolean;
   verdict: string | null;

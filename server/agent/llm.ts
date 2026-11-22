@@ -28,6 +28,7 @@ async function withRetry<T>(ctx: LlmCtx, fn: () => Promise<T>): Promise<T> {
     try {
       return await fn();
     } catch (e) {
+      ctx.run.aiWaiting(false);
       if (ctx.run.abort.signal.aborted) throw new Error('Run stopped');
       const m = e instanceof Error ? e.message : String(e);
       const delay = RETRY_DELAYS_S[attempt - 1];
@@ -66,6 +67,8 @@ export async function structured<S extends z.ZodType>(ctx: LlmCtx, task: string,
           abortSignal: ctx.run.abort.signal,
           maxRetries: 1,
           timeout: { stepMs: STEP_TIMEOUT_MS },
+          onLanguageModelCallStart: () => ctx.run.aiWaiting(true),
+          onLanguageModelCallEnd: () => ctx.run.aiWaiting(false),
         }),
       );
       ctx.run.addUsage(res.usage);
@@ -98,6 +101,8 @@ export async function toolLoop(
       abortSignal: ctx.run.abort.signal,
       maxRetries: 1,
       timeout: { stepMs: STEP_TIMEOUT_MS },
+      onLanguageModelCallStart: () => ctx.run.aiWaiting(true),
+      onLanguageModelCallEnd: () => ctx.run.aiWaiting(false),
       // Keep the context small: old page snapshots are dropped once newer ones exist.
       prepareStep: async ({ messages }) =>
         messages.length > 8
