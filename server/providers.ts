@@ -144,6 +144,8 @@ export async function checkKey(provider: ProviderId, apiKey: string): Promise<Ke
         const j = await getJson('https://openrouter.ai/api/v1/models', {});
         models = j.data
           .filter((m: { supported_parameters?: string[] }) => m.supported_parameters?.includes('tools'))
+          // Variants like ":batch" only work with batch endpoints; keep normal models and ":free" ones.
+          .filter((m: { id: string }) => !/:(?!free$)[\w-]+$/.test(m.id))
           .map((m: { id: string; name?: string }) => ({ id: m.id, label: (m.name || m.id) + (m.id.endsWith(':free') ? ' (free)' : '') }));
         break;
       }
