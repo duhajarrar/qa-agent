@@ -8,8 +8,13 @@ export interface LlmCtx {
   instructions: string;
 }
 
+// Providers sometimes return temporary errors (overloaded, high demand). Retry those for longer.
+const MAX_RETRIES = 6; // exponential backoff: about 2 minutes in total
+
 function errText(e: unknown) {
   const m = e instanceof Error ? e.message : String(e);
+  if (/overload|high demand|unavailable|503|529|try again later/i.test(m))
+    return 'The AI provider is overloaded right now. This is temporary and not a problem with your website: try again in a few minutes, or pick another model (stable models are busy less often than preview ones).';
   if (/401|403|invalid.*key|unauthorized|authentication/i.test(m)) return 'The AI provider rejected the API key.';
   if (/429|rate limit|quota|exhausted/i.test(m)) return 'The AI provider rate limit or quota was reached. Free keys run out quickly; try a Quick test or a paid key.';
   return m.slice(0, 300);
@@ -27,14 +32,14 @@ export async function structured<S extends z.ZodType>(ctx: LlmCtx, task: string,
         prompt: `TASK: ${task}\n\n${prompt}${attempt ? `\n\nYour previous answer could not be used (${errText(lastErr)}). Reply with valid JSON that matches the schema.` : ''}`,
         output: Output.object({ schema }),
         abortSignal: ctx.run.abort.signal,
-        maxRetries: 2,
+        maxRetries: MAX_RETRIES,
       });
       ctx.run.addUsage(res.usage);
       return res.output as z.infer<S>;
     } catch (e) {
       lastErr = e;
       if (ctx.run.abort.signal.aborted) throw new Error('Run stopped');
-      if (/401|403|429|quota|rate limit|unauthorized/i.test(String(e))) throw new Error(errText(e));
+      if (/401|403|429|quota|rate limit|unauthorized|overload|high demand|unavailable|503|529/i.test(String(e))) throw new Error(errText(e));
     }
   }
   throw new Error(`The AI could not produce a valid answer for "${task}": ${errText(lastErr)}`);
@@ -57,7 +62,7 @@ export async function toolLoop(
       tools,
       stopWhen: stopTool ? [isStepCount(maxSteps), hasToolCall(stopTool)] : isStepCount(maxSteps),
       abortSignal: ctx.run.abort.signal,
-      maxRetries: 2,
+      maxRetries: MAX_RETRIES,
       // Keep the context small: old page snapshots are dropped once newer ones exist.
       prepareStep: async ({ messages }) =>
         messages.length > 8
