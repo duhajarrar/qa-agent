@@ -13,6 +13,8 @@ const MAX_RETRIES = 6; // exponential backoff: about 2 minutes in total
 
 function errText(e: unknown) {
   const m = e instanceof Error ? e.message : String(e);
+  if (/402|insufficient balance|insufficient_quota|credit balance|insufficient credits|billing|payment required/i.test(m))
+    return 'Your AI account has no credit left (the provider said: insufficient balance). Add credit on the provider\'s website, or start again with another key. This is not a problem with your website.';
   if (/overload|high demand|unavailable|503|529|try again later/i.test(m))
     return 'The AI provider is overloaded right now. This is temporary and not a problem with your website: try again in a few minutes, or pick another model (stable models are busy less often than preview ones).';
   if (/401|403|invalid.*key|unauthorized|authentication/i.test(m)) return 'The AI provider rejected the API key.';
@@ -39,7 +41,7 @@ export async function structured<S extends z.ZodType>(ctx: LlmCtx, task: string,
     } catch (e) {
       lastErr = e;
       if (ctx.run.abort.signal.aborted) throw new Error('Run stopped');
-      if (/401|403|429|quota|rate limit|unauthorized|overload|high demand|unavailable|503|529/i.test(String(e))) throw new Error(errText(e));
+      if (/401|402|403|429|quota|rate limit|unauthorized|overload|high demand|unavailable|503|529|balance|credit|billing/i.test(String(e))) throw new Error(errText(e));
     }
   }
   throw new Error(`The AI could not produce a valid answer for "${task}": ${errText(lastErr)}`);

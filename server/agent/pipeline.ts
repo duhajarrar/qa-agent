@@ -419,7 +419,7 @@ How to work:
         );
       } catch (e) {
         const m = e instanceof Error ? e.message : String(e);
-        if (/stopped|API key|rate limit|quota|overloaded/i.test(m)) {
+        if (/stopped|API key|rate limit|quota|overloaded|no credit/i.test(m)) {
           await session.closeContext();
           throw e;
         }

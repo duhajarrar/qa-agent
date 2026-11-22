@@ -70,6 +70,7 @@ async function getJson(url: string, headers: Record<string, string>) {
   if (!res.ok) {
     let msg = `The provider answered ${res.status}.`;
     if (res.status === 401 || res.status === 403) msg = 'This key was not accepted. Check that you copied the whole key.';
+    else if (res.status === 402) msg = 'This account has no credit left. Add credit on the provider\'s website, or use another key.';
     else if (res.status === 429) msg = 'This key has hit its rate limit. Wait a minute and try again.';
     throw new Error(msg);
   }
@@ -107,6 +108,11 @@ export async function checkKey(provider: ProviderId, apiKey: string): Promise<Ke
       case 'deepseek': {
         const j = await getJson('https://api.deepseek.com/models', { Authorization: `Bearer ${key}` });
         models = j.data.map((m: { id: string }) => ({ id: m.id, label: m.id }));
+        // DeepSeek is pay-as-you-go: a valid key with an empty balance fails on the first request.
+        const bal = await getJson('https://api.deepseek.com/user/balance', { Authorization: `Bearer ${key}` }).catch(() => null);
+        if (bal && bal.is_available === false) {
+          return { ok: false, error: 'This DeepSeek key works, but the account has no balance. Top up at platform.deepseek.com, or use another key.', models: [] };
+        }
         break;
       }
       case 'groq': {
@@ -117,7 +123,11 @@ export async function checkKey(provider: ProviderId, apiKey: string): Promise<Ke
         break;
       }
       case 'openrouter': {
-        await getJson('https://openrouter.ai/api/v1/key', { Authorization: `Bearer ${key}` });
+        const info = await getJson('https://openrouter.ai/api/v1/key', { Authorization: `Bearer ${key}` });
+        const remaining = info?.data?.limit_remaining;
+        if (typeof remaining === 'number' && remaining <= 0) {
+          return { ok: false, error: 'This OpenRouter key has reached its credit limit. Add credit or raise the limit at openrouter.ai, or use another key.', models: [] };
+        }
         const j = await getJson('https://openrouter.ai/api/v1/models', {});
         models = j.data
           .filter((m: { supported_parameters?: string[] }) => m.supported_parameters?.includes('tools'))
