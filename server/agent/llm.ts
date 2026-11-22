@@ -12,7 +12,8 @@ export interface LlmCtx {
 // We retry those ourselves so the user can see what is happening in the activity feed.
 const RETRY_DELAYS_S = [10, 20, 40, 60, 90]; // up to 6 attempts, about 4 minutes of waiting in total
 const STEP_TIMEOUT_MS = 120_000; // one model answer taking longer than this counts as a temporary failure
-const TRANSIENT = /overload|high demand|unavailable|503|529|500|502|504|timeout|timed out|aborted due to timeout|ECONNRESET|ETIMEDOUT|fetch failed|socket hang up|try again later|internal error/i;
+// Malformed answers ("could not be parsed", Groq's tool_use_failed) are random model slips: a retry usually works.
+const TRANSIENT = /could not be parsed|failed_generation|tool_use_failed|parsing failed|invalid tool call|overload|high demand|unavailable|503|529|500|502|504|timeout|timed out|aborted due to timeout|ECONNRESET|ETIMEDOUT|fetch failed|socket hang up|try again later|internal error/i;
 const RATE_LIMIT = /429|rate limit|too many requests|resource_exhausted|try again in|retry in/i;
 const DAILY = /per day|perday|daily|insufficient_quota|insufficient balance|credit balance is too low|request too large/i;
 const FATAL = /401|402|403|invalid.*key|unauthorized|authentication|insufficient balance|insufficient_quota|credit balance is too low|payment required|not found|no longer available|not supported|request too large/i;
@@ -38,13 +39,17 @@ async function withRetry<T>(ctx: LlmCtx, fn: () => Promise<T>): Promise<T> {
       const retryable = rateLimited || (TRANSIENT.test(m) && !FATAL.test(m));
       let delay = RETRY_DELAYS_S[attempt - 1];
       if (!retryable || delay === undefined) throw e;
+      const malformed = /could not be parsed|failed_generation|tool_use_failed|parsing failed|invalid tool call/i.test(m);
+      if (malformed) delay = 2;
       const asked = m.match(/(?:try again|retry) in ([\d.]+)\s*(ms|s|m)?/i);
       if (asked) {
         const v = Number(asked[1]) * (asked[2] === 'm' ? 60 : asked[2] === 'ms' ? 0.001 : 1);
         delay = Math.min(120, Math.max(5, Math.ceil(v) + 2));
       }
       ctx.run.log(
-        rateLimited
+        malformed
+          ? `The AI sent a badly formatted answer. Asking again (attempt ${attempt + 1} of ${RETRY_DELAYS_S.length + 1})…`
+          : rateLimited
           ? `Reached the AI provider's per-minute limit (common with free keys). Waiting ${delay} s, then continuing (attempt ${attempt + 1} of ${RETRY_DELAYS_S.length + 1})…`
           : `The AI provider is busy or slow right now. Trying again in ${delay} s (attempt ${attempt + 1} of ${RETRY_DELAYS_S.length + 1})…`,
       );
@@ -61,6 +66,8 @@ function errText(e: unknown) {
 }
 
 function friendlyError(m: string) {
+  if (/could not be parsed|failed_generation|tool_use_failed|parsing failed|invalid tool call/i.test(m))
+    return 'The AI kept sending badly formatted answers (this happens with some free or smaller models). Try again, or pick another model. This is not a problem with your website.';
   if (/request too large|reduce your message size/i.test(m))
     return 'One request is bigger than this key\'s per-minute limit (common with free keys). Pick another model with higher limits, or use a paid key. This is not a problem with your website.';
   if (/no longer available|not found|not supported|does not exist/i.test(m) && /model/i.test(m))
