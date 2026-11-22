@@ -41,10 +41,11 @@ const PREFERENCES: Record<ProviderId, RegExp[]> = {
   deepseek: [/^deepseek-chat$/i, /deepseek/i],
   openrouter: [/^anthropic\/claude-.*sonnet/i, /^openai\/gpt-5(?!.*(nano|codex))/i, /^google\/gemini-.*flash/i, /:free$/i],
   // Llama 4 Scout has the highest tokens-per-minute allowance on Groq's free tier, which a browser agent needs.
-  groq: [/llama-4-scout/i, /gpt-oss-120b/i, /llama-.*70b/i, /qwen/i, /llama/i],
+  // gpt-oss on Groq often sends malformed tool calls, so models that call tools reliably come first.
+  groq: [/llama-4-scout/i, /kimi-k2/i, /llama-.*70b/i, /qwen/i, /gpt-oss-120b/i, /llama/i],
 };
 
-const EXCLUDE = /(banana|robotics|customtools|custom-tools|embed|whisper|tts|transcribe|audio|realtime|image|dall-e|moderation|guard|search|instruct|davinci|babbage|imagen|veo|aqa|learnlm|gemma-?\d*-?\d*b?-?it$|computer-use|live)/i;
+const EXCLUDE = /(orpheus|playai|allam|banana|robotics|customtools|custom-tools|embed|whisper|tts|transcribe|audio|realtime|image|dall-e|moderation|guard|search|instruct|davinci|babbage|imagen|veo|aqa|learnlm|gemma-?\d*-?\d*b?-?it$|computer-use|live)/i;
 
 function newestFirst(a: string, b: string) {
   return b.localeCompare(a, 'en', { numeric: true });
