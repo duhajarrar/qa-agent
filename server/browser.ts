@@ -61,7 +61,7 @@ export class BrowserSession {
   }
 
   async launch() {
-    this.browser = await chromium.launch({ headless: true });
+    this.browser = await chromium.launch({ headless: true, args: ['--disable-dev-shm-usage'] });
   }
 
   browserVersion() {

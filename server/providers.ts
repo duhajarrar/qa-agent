@@ -49,13 +49,19 @@ function newestFirst(a: string, b: string) {
   return b.localeCompare(a, 'en', { numeric: true });
 }
 
+const UNSTABLE = /(preview|exp|experimental|beta|alpha)/i;
+
 function pickRecommended(provider: ProviderId, models: ModelInfo[]): string | undefined {
-  const ids = models.map((m) => m.id);
-  for (const re of PREFERENCES[provider]) {
-    const hits = ids.filter((id) => re.test(id)).sort(newestFirst);
-    if (hits.length) return hits[0];
+  const all = models.map((m) => m.id);
+  // Prefer stable models: preview models are busier and change without notice.
+  const stable = all.filter((id) => !UNSTABLE.test(id));
+  for (const ids of [stable, all]) {
+    for (const re of PREFERENCES[provider]) {
+      const hits = ids.filter((id) => re.test(id)).sort(newestFirst);
+      if (hits.length) return hits[0];
+    }
   }
-  return ids[0];
+  return stable[0] ?? all[0];
 }
 
 async function getJson(url: string, headers: Record<string, string>) {
