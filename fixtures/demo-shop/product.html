@@ -1,0 +1,6 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Running Shoes — ShopLite</title><link rel="stylesheet" href="style.css"></head>
+<body><header><a href="/">ShopLite</a><nav><a href="/cart.html">Cart</a></nav></header>
+<main><h1>Running Shoes</h1><p>Light shoes for road running.</p><p>Price: $80.00</p>
+<button class="btn" id="add">Add to cart</button><p id="msg" role="status"></p></main>
+<script>document.getElementById('add').onclick=function(){localStorage.setItem('cart','1');document.getElementById('msg').textContent='Added to cart';};</script>
+</body></html>

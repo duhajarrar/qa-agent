@@ -1,0 +1,11 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Cart — ShopLite</title><link rel="stylesheet" href="style.css"></head>
+<body><header><a href="/">ShopLite</a><nav><a href="/cart.html">Cart</a></nav></header>
+<main><h1>Your cart</h1><div id="content"></div></main>
+<script>
+var has=localStorage.getItem('cart')==='1';var c=document.getElementById('content');
+if(!has){c.innerHTML='<p>Your cart is empty.</p>';}else{
+c.innerHTML='<div class="card"><p>Running Shoes × 1 — $80.00</p><label for="code">Discount code</label> <input id="code"> <button class="btn" id="apply">Apply</button><p id="cmsg" role="status"></p><p><strong id="total">Total: $80.00</strong></p></div>';
+document.getElementById('apply').onclick=function(){var v=document.getElementById('code').value.trim();
+ if(v==='SAVE10'){document.getElementById('cmsg').textContent='Code SAVE10 applied';fetch('/api/discount',{method:'POST'}).catch(function(){});console.error('discount service returned 500');}
+ else{document.getElementById('cmsg').textContent='This code is not valid';}};}
+</script></body></html>
