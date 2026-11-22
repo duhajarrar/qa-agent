@@ -43,7 +43,7 @@ const PREFERENCES: Record<ProviderId, RegExp[]> = {
   groq: [/gpt-oss-120b/i, /llama-.*70b/i, /qwen/i, /llama/i],
 };
 
-const EXCLUDE = /(embed|whisper|tts|transcribe|audio|realtime|image|dall-e|moderation|guard|search|instruct|davinci|babbage|imagen|veo|aqa|learnlm|gemma-?\d*-?\d*b?-?it$|computer-use|live)/i;
+const EXCLUDE = /(banana|robotics|customtools|custom-tools|embed|whisper|tts|transcribe|audio|realtime|image|dall-e|moderation|guard|search|instruct|davinci|babbage|imagen|veo|aqa|learnlm|gemma-?\d*-?\d*b?-?it$|computer-use|live)/i;
 
 function newestFirst(a: string, b: string) {
   return b.localeCompare(a, 'en', { numeric: true });

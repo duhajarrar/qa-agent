@@ -23,27 +23,36 @@ const DEPTHS: { id: Depth; name: string; hint: string }[] = [
   { id: 'deep', name: 'Deep', hint: 'Every corner' },
 ];
 
+// Keeps the form while the tab is open, so "Try again" after a failed run does not mean typing
+// everything again. Only in memory: nothing (and never the key) is written to storage.
+const draft: Record<string, unknown> = {};
+function useDraft<T>(name: string, initial: T) {
+  const [v, setV] = useState<T>(() => (name in draft ? (draft[name] as T) : initial));
+  useEffect(() => { draft[name] = v; }, [name, v]);
+  return [v, setV] as const;
+}
+
 function Dot({ done, active, n }: { done: boolean; active: boolean; n: number }) {
   return <span className={`dot ${done ? 'done' : active ? 'active' : 'todo'}`}>{done ? <Check size={16} /> : n}</span>;
 }
 
 export function Start() {
   const [mockAvailable, setMockAvailable] = useState(false);
-  const [provider, setProvider] = useState<PId | null>(null);
-  const [key, setKey] = useState('');
-  const [keyState, setKeyState] = useState<'idle' | 'checking' | 'ok' | 'error'>('idle');
+  const [provider, setProvider] = useDraft<PId | null>('provider', null);
+  const [key, setKey] = useDraft('key', '');
+  const [keyState, setKeyState] = useDraft<'idle' | 'checking' | 'ok' | 'error'>('keyState', 'idle');
   const [keyError, setKeyError] = useState('');
-  const [models, setModels] = useState<ModelInfo[]>([]);
-  const [model, setModel] = useState('');
-  const [recommended, setRecommended] = useState('');
-  const [url, setUrl] = useState('');
-  const [preview, setPreview] = useState<{ state: 'idle' | 'loading' | 'ok' | 'error'; title?: string; host?: string; color?: string | null; error?: string }>({ state: 'idle' });
+  const [models, setModels] = useDraft<ModelInfo[]>('models', []);
+  const [model, setModel] = useDraft('model', '');
+  const [recommended, setRecommended] = useDraft('recommended', '');
+  const [url, setUrl] = useDraft('url', '');
+  const [preview, setPreview] = useDraft<{ state: 'idle' | 'loading' | 'ok' | 'error'; title?: string; host?: string; color?: string | null; error?: string }>('preview', { state: 'idle' });
   const [more, setMore] = useState(false);
-  const [depth, setDepth] = useState<Depth>('standard');
-  const [depthTouched, setDepthTouched] = useState(false);
-  const [files, setFiles] = useState<File[]>([]);
-  const [accounts, setAccounts] = useState<Account[]>([{ role: '', username: '', password: '' }]);
-  const [notes, setNotes] = useState('');
+  const [depth, setDepth] = useDraft<Depth>('depth', 'standard');
+  const [depthTouched, setDepthTouched] = useDraft('depthTouched', false);
+  const [files, setFiles] = useDraft<File[]>('files', []);
+  const [accounts, setAccounts] = useDraft<Account[]>('accounts', [{ role: '', username: '', password: '' }]);
+  const [notes, setNotes] = useDraft('notes', '');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const previewTimer = useRef<number | undefined>(undefined);

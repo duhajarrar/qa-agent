@@ -149,7 +149,8 @@ export function RunView({ id }: { id: string }) {
             <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               <h2 style={{ fontSize: 22 }}>The test stopped because of a problem</h2>
               <div className="note err"><Info /><span>{state.error}</span></div>
-              <button type="button" className="btn primary" style={{ alignSelf: 'flex-start' }} onClick={() => navigate('/')}>Start again</button>
+              <button type="button" className="btn primary" style={{ alignSelf: 'flex-start' }} onClick={() => navigate('/')}>Try again</button>
+              <span className="tiny muted">Your settings are kept in this tab, so you can just pick another model or press Start.</span>
             </div>
           )}
           {state.status === 'stopped' && !state.reportReady && (
