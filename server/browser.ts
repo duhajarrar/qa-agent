@@ -206,7 +206,17 @@ export class BrowserSession {
   }
 
   private resolveSecrets(value: string): string {
-    return value.replace(/\{\{secret:([^}]+)\}\}/g, (m, name: string) => this.opts.secrets[name.trim()] ?? m);
+    return value.replace(/\{\{secret:([^}]+)\}\}/g, (_m, name: string) => {
+      const v = this.opts.secrets[name.trim()];
+      if (v === undefined) {
+        const known = Object.keys(this.opts.secrets);
+        throw new Error(
+          `There is no saved password called "${name.trim()}"${known.length ? ` (saved: ${known.join(', ')})` : ' (the user gave no passwords)'}. ` +
+            'If the website itself shows demo credentials, type them exactly as shown; otherwise report the test as blocked.',
+        );
+      }
+      return v;
+    });
   }
 
   private describe(t: Target) {
@@ -254,7 +264,7 @@ export class BrowserSession {
     return `${prefix} Now at ${page.url()} — "${title}"`;
   }
 
-  async snapshotText(max = 9000): Promise<string> {
+  async snapshotText(max = 6000): Promise<string> {
     const page = this.requirePage();
     let snap = '';
     try {

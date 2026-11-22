@@ -22,6 +22,7 @@ interface CaseRunInfo {
 }
 
 const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 50);
+const unnumber = (s: string) => s.replace(/^\s*(?:step\s*)?\d+\s*[.):-]\s*/i, '').trim();
 const list = (xs: string[]) => xs.map((x, i) => `${i + 1}. ${x}`).join('\n');
 
 export async function runPipeline(run: Run) {
@@ -137,6 +138,7 @@ When you are done, reply with detailed notes: what the product does, who it is f
       flowSchema,
     );
     const needed = flowOut.needed.slice(0, 6).map((n, i) => ({ id: `n${i}`, label: n.label, secret: n.secret }));
+    flowOut.steps = flowOut.steps.map(unnumber).filter(Boolean);
     const flowAns = await run.ask({ id: 'cp-flow', kind: 'flow', title: 'Is this the main journey of your website?', steps: flowOut.steps, needed });
     let steps = flowOut.steps;
     if (flowAns && flowAns.kind === 'flow' && !flowAns.useDefaults) {
@@ -198,6 +200,7 @@ ${cases.length ? `Already written (do not repeat):\n${cases.map((c) => `- ${c.ti
       for (const c of out.cases) {
         cases.push({
           ...c,
+          steps: c.steps.map(unnumber).filter(Boolean),
           id: `TC-${String(cases.length + 1).padStart(3, '0')}`,
           group: g,
           include: true,
@@ -457,6 +460,8 @@ export function countStatuses(cases: TestCase[]) {
 }
 
 function computeVerdict(cases: TestCase[], bugs: Bug[]): string {
+  // Nothing actually ran (all blocked/skipped): don't pretend the product is ready.
+  if (!cases.some((c) => c.status === 'pass' || c.status === 'fail')) return 'Inconclusive';
   const happyFail = cases.some((c) => c.group === 'happy' && c.status === 'fail');
   if (bugs.some((b) => b.priority === 'Blocker' || b.priority === 'Critical') || happyFail) return 'Not ready';
   if (bugs.length || cases.some((c) => c.status === 'blocked')) return 'Ready with risks';

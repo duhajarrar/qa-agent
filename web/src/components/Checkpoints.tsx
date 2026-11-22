@@ -35,11 +35,11 @@ function QuestionsCard({ cp, send }: { cp: Extract<Checkpoint, { kind: 'question
           <b>{q.question}</b>
           <div className="row" role="group" aria-label={`Answers for: ${q.question}`}>
             {q.suggestions.map((s) => (
-              <button key={s} type="button" className="quick" aria-pressed={answers[q.id] === s} onClick={() => setAnswers({ ...answers, [q.id]: s })}>{s}</button>
+              <button key={s} type="button" className="quick" aria-pressed={answers[q.id] === s} onClick={() => setAnswers((a) => ({ ...a, [q.id]: s }))}>{s}</button>
             ))}
           </div>
           <input className="input" aria-label="Your own answer" placeholder={`Or type your answer (default: ${q.defaultAnswer})`} value={q.suggestions.includes(answers[q.id]) ? '' : answers[q.id] || ''}
-            onChange={(e) => setAnswers({ ...answers, [q.id]: e.target.value })} style={{ background: '#fff' }} />
+            onChange={(e) => { const v = e.target.value; setAnswers((a) => ({ ...a, [q.id]: v })); }} style={{ background: '#fff' }} />
         </div>
       ))}
       <Actions busy={busy} primary="Send answers" onPrimary={() => go({ kind: 'questions', answers })} onDefaults={() => go({ kind: 'questions', useDefaults: true, answers: {} })} />
@@ -94,7 +94,7 @@ function FlowCard({ cp, send }: { cp: Extract<Checkpoint, { kind: 'flow' }>; sen
           <div className="row" style={{ alignItems: 'flex-end' }}>
             {cp.needed.map((n) => (
               <label key={n.id} className="label-sm" style={{ flex: '1 1 220px' }}>{n.label}
-                <input className="input" style={{ background: '#fff' }} type={n.secret ? 'password' : 'text'} autoComplete="off" value={values[n.id] || ''} onChange={(e) => setValues({ ...values, [n.id]: e.target.value })} />
+                <input className="input" style={{ background: '#fff' }} type={n.secret ? 'password' : 'text'} autoComplete="off" value={values[n.id] || ''} onChange={(e) => { const v = e.target.value; setValues((x) => ({ ...x, [n.id]: v })); }} />
               </label>
             ))}
           </div>
@@ -154,14 +154,14 @@ function CasesCard({ cp, send }: { cp: Extract<Checkpoint, { kind: 'cases' }>; s
                 <span className={`chip ${c.priority === 'High' ? 'red' : c.priority === 'Medium' ? 'orange' : ''}`}>{c.priority}</span>
                 {c.unsure && <span className="chip coral">Not sure</span>}
                 <label className="toggle">
-                  <input type="checkbox" className="sr-only" checked={e.include} onChange={(ev) => setEdits({ ...edits, [c.id]: { ...e, include: ev.target.checked } })} />
+                  <input type="checkbox" className="sr-only" checked={e.include} onChange={(ev) => { const on = ev.target.checked; setEdits((x) => ({ ...x, [c.id]: { ...x[c.id], include: on } })); }} />
                   <span className="switch" aria-hidden="true" />
                   {e.include ? 'Include' : 'Skip'}
                 </label>
               </div>
               <label className="label-sm">What should happen
                 <textarea className="input" rows={2} style={{ background: '#fff', color: 'var(--ink)', fontSize: 15 }} value={e.expected} disabled={!e.include}
-                  onChange={(ev) => setEdits({ ...edits, [c.id]: { ...e, expected: ev.target.value } })} />
+                  onChange={(ev) => { const v = ev.target.value; setEdits((x) => ({ ...x, [c.id]: { ...x[c.id], expected: v } })); }} />
               </label>
               <button type="button" className="link-btn" style={{ alignSelf: 'flex-start', paddingLeft: 0, minHeight: 32 }} aria-expanded={open === c.id} onClick={() => setOpen(open === c.id ? null : c.id)}>
                 {open === c.id ? 'Hide steps' : 'Show steps'} <Chevron up={open === c.id} />

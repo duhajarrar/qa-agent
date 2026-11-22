@@ -40,7 +40,8 @@ const PREFERENCES: Record<ProviderId, RegExp[]> = {
   google: [/^gemini-[\d.]+-flash(?!.*(lite|image|tts|live|audio|thinking))/i, /^gemini-[\d.]+-pro(?!.*(image|tts|vision))/i, /gemini.*flash/i],
   deepseek: [/^deepseek-chat$/i, /deepseek/i],
   openrouter: [/^anthropic\/claude-.*sonnet/i, /^openai\/gpt-5(?!.*(nano|codex))/i, /^google\/gemini-.*flash/i, /:free$/i],
-  groq: [/gpt-oss-120b/i, /llama-.*70b/i, /qwen/i, /llama/i],
+  // Llama 4 Scout has the highest tokens-per-minute allowance on Groq's free tier, which a browser agent needs.
+  groq: [/llama-4-scout/i, /gpt-oss-120b/i, /llama-.*70b/i, /qwen/i, /llama/i],
 };
 
 const EXCLUDE = /(banana|robotics|customtools|custom-tools|embed|whisper|tts|transcribe|audio|realtime|image|dall-e|moderation|guard|search|instruct|davinci|babbage|imagen|veo|aqa|learnlm|gemma-?\d*-?\d*b?-?it$|computer-use|live)/i;

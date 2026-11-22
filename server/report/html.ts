@@ -78,7 +78,7 @@ export async function writeHtmlReport(runDir: string, d: ReportData, mask: (s: s
   const n = (s: TestCase['status']) => d.cases.filter((c) => c.status === s).length;
   const executed = n('pass') + n('fail');
   const passRate = executed ? Math.round((n('pass') / executed) * 100) : 0;
-  const verdictCls = d.verdict === 'Ready' ? 'pass' : d.verdict === 'Not ready' ? 'fail' : 'blocked';
+  const verdictCls = d.verdict === 'Ready' ? 'pass' : d.verdict === 'Not ready' ? 'fail' : 'blocked'; // Inconclusive / Ready with risks
   const shots = new Map<string, string>();
   for (const c of d.cases) if (c.screenshot) shots.set(c.id, await dataUri(images, runDir, c.screenshot));
   const sevCounts = ['S1 Critical', 'S2 Major', 'S3 Minor', 'S4 Trivial'].map((s) => [s, d.bugs.filter((b) => b.severity === s).length] as const);

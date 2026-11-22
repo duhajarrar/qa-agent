@@ -91,7 +91,7 @@ export async function structured<S extends z.ZodType>(ctx: LlmCtx, task: string,
           reasoning: 'medium',
           maxOutputTokens: 8000,
           abortSignal: ctx.run.abort.signal,
-          maxRetries: 1,
+          maxRetries: 3,
           timeout: { stepMs: STEP_TIMEOUT_MS },
           onLanguageModelCallStart: () => ctx.run.aiWaiting(true),
           onLanguageModelCallEnd: () => ctx.run.aiWaiting(false),
@@ -133,14 +133,17 @@ export async function toolLoop(
         ctx.run.stepProgress(`Step ${step.stepNumber + 1} of up to ${maxSteps}`);
       },
       abortSignal: ctx.run.abort.signal,
-      maxRetries: 1,
+      // Retry inside the step first (honours the provider's retry-after), so a short
+      // rate limit does not restart the whole browser session.
+      maxRetries: 4,
       timeout: { stepMs: STEP_TIMEOUT_MS },
       onLanguageModelCallStart: () => ctx.run.aiWaiting(true),
       onLanguageModelCallEnd: () => ctx.run.aiWaiting(false),
-      // Keep the context small: old page snapshots are dropped once newer ones exist.
+      // Keep the context small (free tiers limit tokens per minute): only the latest page
+      // snapshot is kept, older ones are dropped once a newer one exists.
       prepareStep: async ({ messages }) =>
-        messages.length > 8
-          ? { messages: pruneMessages({ messages, toolCalls: [{ type: 'before-last-6-messages', tools: ['snapshot'] }], emptyMessages: 'remove' }) }
+        messages.length > 4
+          ? { messages: pruneMessages({ messages, toolCalls: [{ type: 'before-last-2-messages', tools: ['snapshot'] }], emptyMessages: 'remove' }) }
           : {},
     }));
     ctx.run.stepProgress(undefined);

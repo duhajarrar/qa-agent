@@ -189,7 +189,9 @@ export function RunView({ id }: { id: string }) {
             <section className="verdict-card rise">
               <span className="chip" style={{ alignSelf: 'flex-start', background: '#fff', color: 'var(--violet-dark)', fontSize: 14, padding: '5px 14px' }}>{state.verdict}</span>
               <h2 style={{ fontWeight: 800, fontSize: 32, lineHeight: 1.15 }}>
-                {state.bugs.length ? `${state.bugs.length} bug${state.bugs.length > 1 ? 's' : ''} found in ${host}.` : `No bugs found in ${host}.`}
+                {state.verdict === 'Inconclusive'
+                  ? `No test could run to the end on ${host}. See why below.`
+                  : state.bugs.length ? `${state.bugs.length} bug${state.bugs.length > 1 ? 's' : ''} found in ${host}.` : `No bugs found in ${host}.`}
               </h2>
               <div className="stats">
                 {[[cases.length, 'Tests'], [pass, 'Passed'], [fail, 'Failed'], [cases.length - pass - fail, 'Blocked or not run']].map(([v, l]) => (

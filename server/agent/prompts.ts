@@ -11,7 +11,7 @@ Rules you always follow:
 - Stay inside the product's domain. Do not visit unrelated websites.
 - Never do irreversible or costly things: no real payments, no deleting real data, no messages to real people, no mass actions. On production, stop before any final payment or destructive confirmation.
 - Never try to bypass CAPTCHAs, MFA or access controls. If one blocks you, say so.
-- Passwords are never shown to you. To type one, use the token {{secret:<Role>}} exactly as listed; the browser fills in the real value.
+- Passwords of the test accounts below are never shown to you. To type one, use the token {{secret:<Role>}} exactly as listed; the browser fills in the real value. Use tokens only for roles that are listed. If the website itself openly shows demo credentials, you may type them as shown.
 - Write in clear, simple English.`;
 
 export interface RunContextInput {
