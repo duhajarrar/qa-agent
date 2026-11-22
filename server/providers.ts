@@ -52,6 +52,16 @@ function newestFirst(a: string, b: string) {
   return b.localeCompare(a, 'en', { numeric: true });
 }
 
+/** Best free (":free") OpenRouter model that supports tools, by name preference. */
+function pickFreeOpenRouter(models: ModelInfo[]): string | undefined {
+  const free = models.map((m) => m.id).filter((id) => id.endsWith(':free'));
+  for (const re of [/gemini/i, /deepseek/i, /qwen3/i, /llama-4/i, /llama-3\.3-70b/i, /mistral/i]) {
+    const hit = free.filter((id) => re.test(id)).sort(newestFirst)[0];
+    if (hit) return hit;
+  }
+  return free.sort(newestFirst)[0];
+}
+
 const UNSTABLE = /(preview|exp|experimental|beta|alpha)/i;
 
 function pickRecommended(provider: ProviderId, models: ModelInfo[]): string | undefined {
@@ -139,21 +149,37 @@ export async function checkKey(provider: ProviderId, apiKey: string): Promise<Ke
       }
     }
     if (!models.length) return { ok: false, error: 'The key works, but no suitable chat models are available for it.', models: [] };
-    const recommended = pickRecommended(provider, models);
+    let recommended = pickRecommended(provider, models);
+    let warning: string | undefined;
     // Listing models does not prove the key can generate (billing, free-tier and quota problems
     // only show up on a real request), so send one tiny request now instead of failing mid-test.
+    const probe = async (id: string) => {
+      await generateText({ model: createModel(provider, key, id), prompt: 'Reply with the word OK.', maxOutputTokens: 16, maxRetries: 0, timeout: 25000 });
+    };
     if (recommended) {
       try {
-        await generateText({ model: createModel(provider, key, recommended), prompt: 'Reply with the word OK.', maxOutputTokens: 16, maxRetries: 0, timeout: 25000 });
+        await probe(recommended);
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
-        if (/overload|high demand|unavailable|503|529|timeout|timed out|could not be parsed/i.test(msg) && !/billing|free tier is not available/i.test(msg)) {
-          return { ok: true, models, recommended, warning: `The key works, but the AI is busy right now, so the test may run slowly. ${errText(e)}` };
+        const noCredit = /402|insufficient|credit|payment required|afford/i.test(msg);
+        const free = provider === 'openrouter' && noCredit ? pickFreeOpenRouter(models) : undefined;
+        if (free) {
+          // OpenRouter account without credit: free models still work, so switch to the best one.
+          try {
+            await probe(free);
+            recommended = free;
+            warning = `Your OpenRouter account has no credit, so only free models will work. I picked ${free}. Free models have small daily limits, so use a Quick test; adding a little credit raises the limits a lot.`;
+          } catch (e2) {
+            return { ok: false, error: errText(e2), models: [] };
+          }
+        } else if (/overload|high demand|unavailable|503|529|timeout|timed out|could not be parsed/i.test(msg) && !/billing|free tier is not available/i.test(msg)) {
+          warning = `The key works, but the AI is busy right now, so the test may run slowly. ${errText(e)}`;
+        } else {
+          return { ok: false, error: errText(e), models: [] };
         }
-        return { ok: false, error: errText(e), models: [] };
       }
     }
-    return { ok: true, models, recommended };
+    return { ok: true, models, recommended, warning };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     return { ok: false, error: msg.includes('fetch failed') ? 'Could not reach the provider. Try again in a moment.' : msg, models: [] };
