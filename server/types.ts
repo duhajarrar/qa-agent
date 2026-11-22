@@ -166,6 +166,7 @@ export interface ModelInfo {
 export interface KeyCheckResult {
   ok: boolean;
   error?: string;
+  warning?: string;
   models: ModelInfo[];
   recommended?: string;
 }

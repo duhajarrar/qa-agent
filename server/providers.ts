@@ -4,7 +4,8 @@ import { createGoogle } from '@ai-sdk/google';
 import { createDeepSeek } from '@ai-sdk/deepseek';
 import { createGroq } from '@ai-sdk/groq';
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
-import type { LanguageModel } from 'ai';
+import { generateText, type LanguageModel } from 'ai';
+import { errText } from './agent/llm.js';
 import type { KeyCheckResult, ModelInfo, ProviderId } from './types.js';
 import { createMockModel } from './mock/mockModel.js';
 
@@ -138,7 +139,21 @@ export async function checkKey(provider: ProviderId, apiKey: string): Promise<Ke
       }
     }
     if (!models.length) return { ok: false, error: 'The key works, but no suitable chat models are available for it.', models: [] };
-    return { ok: true, models, recommended: pickRecommended(provider, models) };
+    const recommended = pickRecommended(provider, models);
+    // Listing models does not prove the key can generate (billing, free-tier and quota problems
+    // only show up on a real request), so send one tiny request now instead of failing mid-test.
+    if (recommended) {
+      try {
+        await generateText({ model: createModel(provider, key, recommended), prompt: 'Reply with the word OK.', maxOutputTokens: 16, maxRetries: 0, timeout: 25000 });
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        if (/overload|high demand|unavailable|503|529|timeout|timed out|could not be parsed/i.test(msg) && !/billing|free tier is not available/i.test(msg)) {
+          return { ok: true, models, recommended, warning: `The key works, but the AI is busy right now, so the test may run slowly. ${errText(e)}` };
+        }
+        return { ok: false, error: errText(e), models: [] };
+      }
+    }
+    return { ok: true, models, recommended };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     return { ok: false, error: msg.includes('fetch failed') ? 'Could not reach the provider. Try again in a moment.' : msg, models: [] };

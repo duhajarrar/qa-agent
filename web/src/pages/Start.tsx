@@ -45,6 +45,7 @@ export function Start() {
   const [models, setModels] = useDraft<ModelInfo[]>('models', []);
   const [model, setModel] = useDraft('model', '');
   const [recommended, setRecommended] = useDraft('recommended', '');
+  const [keyWarning, setKeyWarning] = useDraft('keyWarning', '');
   const [url, setUrl] = useDraft('url', '');
   const [preview, setPreview] = useDraft<{ state: 'idle' | 'loading' | 'ok' | 'error'; title?: string; host?: string; color?: string | null; error?: string }>('preview', { state: 'idle' });
   const [more, setMore] = useState(false);
@@ -90,6 +91,7 @@ export function Start() {
         setModels(r.models);
         setModel(r.recommended || r.models[0]?.id || '');
         setRecommended(r.recommended || '');
+        setKeyWarning(r.warning || '');
         setKeyState('ok');
       } else {
         setKeyState('error');
@@ -196,6 +198,7 @@ export function Start() {
                 </select>
               </label>
             )}
+            {keyOk && keyWarning && <div className="note rise"><Info /><span>{keyWarning}</span></div>}
             {keyOk && limited && (
               <div className="note rise"><Info /><span>Free keys have daily limits, so I suggest a <strong>Quick test</strong> (main journey only). For a full test, use a paid key. You can change this under More options.</span></div>
             )}

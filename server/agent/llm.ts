@@ -16,6 +16,7 @@ const STEP_TIMEOUT_MS = 120_000; // one model answer taking longer than this cou
 const TRANSIENT = /could not be parsed|failed_generation|tool_use_failed|parsing failed|invalid tool call|tool call validation failed|not in request\.tools|overload|high demand|unavailable|503|529|500|502|504|timeout|timed out|aborted due to timeout|ECONNRESET|ETIMEDOUT|fetch failed|socket hang up|try again later|internal error/i;
 const RATE_LIMIT = /429|rate limit|too many requests|resource_exhausted|try again in|retry in/i;
 const DAILY = /per day|perday|daily|insufficient_quota|insufficient balance|credit balance is too low|request too large/i;
+const ACCOUNT = /free tier is not available|set up billing|billing to upgrade|upgrade to the paid tier|billing (?:is )?(?:not )?(?:enabled|required)|enable billing|account is not active|organization has been disabled/i;
 const FATAL = /401|402|403|invalid.*key|unauthorized|authentication|insufficient balance|insufficient_quota|credit balance is too low|payment required|not found|no longer available|not supported|request too large/i;
 
 function sleep(ms: number, signal: AbortSignal) {
@@ -36,7 +37,7 @@ async function withRetry<T>(ctx: LlmCtx, fn: () => Promise<T>): Promise<T> {
       const m = e instanceof Error ? e.message : String(e);
       // Free tiers limit requests/tokens per minute: wait and continue. Daily limits cannot be waited out.
       const rateLimited = RATE_LIMIT.test(m) && !DAILY.test(m);
-      const retryable = rateLimited || (TRANSIENT.test(m) && !FATAL.test(m));
+      const retryable = !ACCOUNT.test(m) && (rateLimited || (TRANSIENT.test(m) && !FATAL.test(m)));
       let delay = RETRY_DELAYS_S[attempt - 1];
       if (!retryable || delay === undefined) throw e;
       const malformed = /could not be parsed|failed_generation|tool_use_failed|parsing failed|invalid tool call|tool call validation failed|not in request\.tools/i.test(m);
@@ -51,21 +52,23 @@ async function withRetry<T>(ctx: LlmCtx, fn: () => Promise<T>): Promise<T> {
           ? `The AI sent a badly formatted answer. Asking again (attempt ${attempt + 1} of ${RETRY_DELAYS_S.length + 1})…`
           : rateLimited
           ? `Reached the AI provider's per-minute limit (common with free keys). Waiting ${delay} s, then continuing (attempt ${attempt + 1} of ${RETRY_DELAYS_S.length + 1})…`
-          : `The AI provider is busy or slow right now. Trying again in ${delay} s (attempt ${attempt + 1} of ${RETRY_DELAYS_S.length + 1})…`,
+          : `The AI provider is busy or slow right now. Trying again in ${delay} s (attempt ${attempt + 1} of ${RETRY_DELAYS_S.length + 1})… Provider said: "${m.replace(/\s+/g, ' ').trim().slice(0, 140)}"`,
       );
       await sleep(delay * 1000, ctx.run.abort.signal);
     }
   }
 }
 
-function errText(e: unknown) {
+export function errText(e: unknown) {
   const m = e instanceof Error ? e.message : String(e);
   const raw = m.replace(/\s+/g, ' ').trim().slice(0, 240);
   const friendly = friendlyError(m);
   return friendly === raw ? raw : `${friendly} (Provider said: "${raw}")`;
 }
 
-function friendlyError(m: string) {
+export function friendlyError(m: string) {
+  if (ACCOUNT.test(m))
+    return 'The AI provider says this key\'s account needs billing set up before it can be used (for Gemini: the free tier is not available for this Google project). Enable billing, use a key from another account, or pick another provider. This is not a problem with your website.';
   if (/could not be parsed|failed_generation|tool_use_failed|parsing failed|invalid tool call|tool call validation failed|not in request\.tools/i.test(m))
     return 'The AI kept sending badly formatted answers (this happens with some free or smaller models). Try again, or pick another model. This is not a problem with your website.';
   if (/request too large|reduce your message size/i.test(m))
@@ -109,7 +112,7 @@ export async function structured<S extends z.ZodType>(ctx: LlmCtx, task: string,
     } catch (e) {
       lastErr = e;
       if (ctx.run.abort.signal.aborted) throw new Error('Run stopped');
-      if (FATAL.test(String(e)) || TRANSIENT.test(String(e)) || /429|rate limit/i.test(String(e))) throw new Error(errText(e));
+      if (ACCOUNT.test(String(e)) || FATAL.test(String(e)) || TRANSIENT.test(String(e)) || /429|rate limit/i.test(String(e))) throw new Error(errText(e));
     }
   }
   throw new Error(`The AI could not produce a valid answer for "${task}": ${errText(lastErr)}`);
