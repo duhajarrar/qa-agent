@@ -49,7 +49,7 @@ ${personas.length ? `Personas:\n${personas.map((p) => `- ${p.name} (${p.role}): 
 }
 
 export const DEPTH_BUDGET: Record<Depth, { explorePages: number; exploreSteps: number; caseSteps: number; groups: Record<string, string> }> = {
-  quick: { explorePages: 6, exploreSteps: 20, caseSteps: 18, groups: { happy: '3-5' } },
+  quick: { explorePages: 4, exploreSteps: 12, caseSteps: 15, groups: { happy: '3-5' } },
   standard: { explorePages: 12, exploreSteps: 35, caseSteps: 25, groups: { happy: '5-8', edge: '4-7', negative: '5-8', nonfunctional: '3-5' } },
   deep: { explorePages: 20, exploreSteps: 50, caseSteps: 32, groups: { happy: '8-12', edge: '8-12', negative: '8-12', nonfunctional: '5-8' } },
 };

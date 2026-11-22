@@ -99,7 +99,12 @@ export class Run extends EventEmitter {
   }
 
   live(action: string, url: string) {
-    this.state.live = { action: this.mask(action), url };
+    this.state.live = { ...this.state.live, action: this.mask(action), url };
+    this.changed();
+  }
+
+  stepProgress(step: string | undefined) {
+    this.state.live = { ...this.state.live, step };
     this.changed();
   }
 

@@ -287,7 +287,7 @@ export function RunView({ id }: { id: string }) {
             )}
             {state.status === 'running' && (
               <span className="tiny" style={{ color: '#cfc8ee' }}>
-                AI used {(state.usage.inputTokens + state.usage.outputTokens).toLocaleString()} tokens so far
+                {state.live.step ? `${state.live.step} · ` : ''}AI used {(state.usage.inputTokens + state.usage.outputTokens).toLocaleString()} tokens so far
               </span>
             )}
           </div>
