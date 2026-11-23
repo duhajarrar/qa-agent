@@ -64,7 +64,7 @@ See [`.env.example`](.env.example). Everything is optional.
 |---|---|---|
 | `PORT` | `7860` | HTTP port |
 | `MAX_CONCURRENT_RUNS` | `2` | Tests running at once (each one runs its own browser, roughly a few hundred MB of RAM) |
-| `CHECKPOINT_TIMEOUT_MIN` | `20` | Minutes to wait for the user before using best guesses |
+| `CHECKPOINT_TIMEOUT_MIN` | `180` | The agent always waits for your answer; after this many minutes with no answer the run is stopped (never continued) |
 | `RUN_TTL_HOURS` | `6` | When reports and evidence are deleted |
 | `ALLOW_PRIVATE_URLS` | off | Dev only: allow `localhost` and private IPs |
 | `ENABLE_MOCK_PROVIDER` | off | Dev only: scripted "Mock" AI used by the automated test |

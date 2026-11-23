@@ -86,6 +86,43 @@ export function friendlyError(m: string) {
   return m.replace(/\s+/g, ' ').trim().slice(0, 240);
 }
 
+const SYNONYMS: Record<string, string> = {
+  expectedResult: 'expected', expectedOutcome: 'expected', expectedBehavior: 'expected',
+  testSteps: 'steps', stepsToReproduce: 'steps', reproductionSteps: 'steps',
+  preCondition: 'preconditions', preConditions: 'preconditions', precondition: 'preconditions',
+  testCaseTitle: 'title', testTitle: 'title', caseTitle: 'title', testCaseName: 'title', testName: 'title',
+  testCases: 'cases', userPersona: 'persona', personaName: 'persona',
+};
+const toCamel = (k: string) => k.replace(/[_\s-]+([a-zA-Z0-9])/g, (_m, c: string) => c.toUpperCase());
+
+/** Fixes common key-naming slips (snake_case, synonyms) so near-miss answers still fit the schema. */
+function normalizeKeys(v: unknown): unknown {
+  if (Array.isArray(v)) return v.map(normalizeKeys);
+  if (!v || typeof v !== 'object') return v;
+  const out: Record<string, unknown> = {};
+  for (const [k, val] of Object.entries(v as Record<string, unknown>)) {
+    const camel = toCamel(k);
+    out[SYNONYMS[camel] ?? camel] = normalizeKeys(val);
+  }
+  return out;
+}
+
+const PLACEHOLDERS = new Set(['', 'Untitled test', 'User', 'General', 'Inferred', 'The product', 'Guest', 'Unexpected behavior']);
+/** True when most fields of the objects inside the answer's lists are still empty placeholders. */
+function listsMostlyEmpty(value: unknown): boolean {
+  if (!value || typeof value !== 'object') return false;
+  for (const v of Object.values(value as Record<string, unknown>)) {
+    if (!Array.isArray(v) || !v.length || typeof v[0] !== 'object' || v[0] === null) continue;
+    const ratios = v.map((item) => {
+      const vals = Object.values(item as Record<string, unknown>);
+      const empty = vals.filter((x) => (typeof x === 'string' && PLACEHOLDERS.has(x)) || (Array.isArray(x) && !x.length)).length;
+      return vals.length ? empty / vals.length : 1;
+    });
+    if (ratios.reduce((a, b) => a + b, 0) / ratios.length > 0.5) return true;
+  }
+  return false;
+}
+
 /** Pulls a JSON object out of model text (handles ```json fences and extra prose). */
 function salvageJson(text: string | undefined): unknown {
   if (!text) return undefined;
@@ -95,7 +132,7 @@ function salvageJson(text: string | undefined): unknown {
   const end = body.lastIndexOf('}');
   if (start < 0 || end <= start) return undefined;
   try {
-    return JSON.parse(body.slice(start, end + 1));
+    return normalizeKeys(JSON.parse(body.slice(start, end + 1)));
   } catch {
     return undefined;
   }
@@ -106,6 +143,13 @@ function schemaIssues(e: unknown): string {
   const issues = cause?.issues;
   if (!issues?.length) return errText(e);
   return issues.slice(0, 5).map((i) => `${i.path.join('.') || 'root'}: ${i.message}`).join('; ');
+}
+
+/** Share of top-level fields that are still at their default (i.e. the model left them out). */
+function emptyFields(value: unknown, defaults: unknown): string[] {
+  if (!value || typeof value !== 'object' || !defaults || typeof defaults !== 'object') return [];
+  const d = defaults as Record<string, unknown>;
+  return Object.keys(d).filter((k) => JSON.stringify((value as Record<string, unknown>)[k]) === JSON.stringify(d[k]));
 }
 
 /** Asks the model for a JSON object matching the schema. Salvages near-misses, retries with feedback. */
@@ -135,16 +179,36 @@ export async function structured<S extends z.ZodType>(ctx: LlmCtx, task: string,
       }),
     );
 
+  const defaults = schema.safeParse({});
+  const total = defaults.success && defaults.data && typeof defaults.data === 'object' ? Object.keys(defaults.data as object).length : 0;
+  let best: { value: z.infer<S>; empty: number } | null = null;
+  // Accept an answer only if it actually filled in most fields; otherwise ask again (keeping the best one).
+  const consider = (value: z.infer<S>): boolean => {
+    const empty = defaults.success ? emptyFields(value, defaults.data) : [];
+    if (!best || empty.length < best.empty) best = { value, empty: empty.length };
+    const deepEmpty = listsMostlyEmpty(value);
+    if (!deepEmpty && (total <= 1 ? empty.length === 0 : empty.length <= Math.floor(total / 2))) return true;
+    lastErr = new Error(deepEmpty ? 'the items in your lists were missing most of their fields; use exactly the field names in the schema' : `the reply left most fields empty (${empty.join(', ')})`);
+    return false;
+  };
   for (let attempt = 0; attempt < 3; attempt++) {
     if (ctx.run.abort.signal.aborted) throw new Error('Run stopped');
     const plain = attempt === 2;
     try {
       const res = await call(attempt, plain);
       ctx.run.addUsage(res.usage);
-      if (!plain) return (res as unknown as { output: z.infer<S> }).output;
+      if (!plain) {
+        const value = (res as unknown as { output: z.infer<S> }).output;
+        if (consider(value)) return value;
+        const reread = schema.safeParse(salvageJson(res.text));
+        if (reread.success && consider(reread.data as z.infer<S>)) return reread.data as z.infer<S>;
+        lastText = res.text || lastText;
+        continue;
+      }
       lastText = res.text;
       const parsed = schema.safeParse(salvageJson(res.text));
-      if (parsed.success) return parsed.data as z.infer<S>;
+      if (parsed.success && consider(parsed.data as z.infer<S>)) return parsed.data as z.infer<S>;
+      if (parsed.success) continue;
       lastErr = new Error(`the reply was not valid JSON for this task: ${parsed.error.issues.slice(0, 3).map((i) => `${i.path.join('.') || 'root'}: ${i.message}`).join('; ')}`);
     } catch (e) {
       lastErr = e;
@@ -154,10 +218,16 @@ export async function structured<S extends z.ZodType>(ctx: LlmCtx, task: string,
       if (NoObjectGeneratedError.isInstance(e)) {
         lastText = e.text || lastText;
         const parsed = schema.safeParse(salvageJson(e.text));
-        if (parsed.success) return parsed.data as z.infer<S>;
+        if (parsed.success && consider(parsed.data as z.infer<S>)) return parsed.data as z.infer<S>;
       }
       if (ACCOUNT.test(String(e)) || FATAL.test(String(e)) || TRANSIENT.test(String(e)) || /429|rate limit/i.test(String(e))) throw new Error(errText(e));
     }
+  }
+  // Partly filled answer beats nothing.
+  const kept = best as { value: z.infer<S>; empty: number } | null;
+  if (kept && kept.empty < total) {
+    ctx.run.log(`The AI's answer for "${task}" was incomplete after 3 tries; I used the most complete one.`);
+    return kept.value;
   }
   // Last resort: keep the run going with empty defaults instead of failing everything,
   // and say so plainly (the report will show what is missing).

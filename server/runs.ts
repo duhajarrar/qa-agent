@@ -8,7 +8,9 @@ import { maskSecrets } from './security.js';
 
 export const RUNS_DIR = process.env.RUNS_DIR || path.join(os.tmpdir(), 'qa-agent-runs');
 const MAX_CONCURRENT = Number(process.env.MAX_CONCURRENT_RUNS || 2);
-const CHECKPOINT_TIMEOUT_MS = Number(process.env.CHECKPOINT_TIMEOUT_MIN || 20) * 60_000;
+// The agent never continues without the user's answer. As a safety net only, a run whose question
+// stays unanswered this long is stopped (not continued), so abandoned runs don't hold a browser slot.
+const CHECKPOINT_TIMEOUT_MS = Number(process.env.CHECKPOINT_TIMEOUT_MIN || 180) * 60_000;
 const RUN_TTL_MS = Number(process.env.RUN_TTL_HOURS || 6) * 3_600_000;
 
 export interface RunConfig {
@@ -142,8 +144,7 @@ export class Run extends EventEmitter {
       const onAbort = () => done(null);
       this.abort.signal.addEventListener('abort', onAbort);
       const timer = setTimeout(() => {
-        this.log('No answer for a while, so I continued with my best guess.');
-        done(null);
+        this.stop(`Nobody answered for ${Math.round(CHECKPOINT_TIMEOUT_MS / 60_000)} minutes, so I stopped this run. Start a new one when you're ready.`);
       }, CHECKPOINT_TIMEOUT_MS);
       this.pending = { id: cp.id, resolve: done, timer };
     });
@@ -155,10 +156,10 @@ export class Run extends EventEmitter {
     return true;
   }
 
-  stop() {
+  stop(reason = 'Stopped by you.') {
     if (['done', 'failed', 'stopped'].includes(this.state.status)) return;
     this.abort.abort();
-    this.log('Stopped by you.');
+    this.log(reason);
     this.setStatus('stopped');
   }
 
