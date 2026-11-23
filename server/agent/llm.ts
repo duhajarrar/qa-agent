@@ -1,4 +1,4 @@
-import { generateText, Output, isStepCount, hasToolCall, pruneMessages, type LanguageModel, type ToolSet } from 'ai';
+import { generateText, Output, isStepCount, hasToolCall, pruneMessages, NoObjectGeneratedError, type LanguageModel, type ToolSet } from 'ai';
 import type { z } from 'zod';
 import type { Run } from '../runs.js';
 
@@ -17,7 +17,7 @@ const TRANSIENT = /could not be parsed|failed_generation|tool_use_failed|parsing
 const RATE_LIMIT = /429|rate limit|too many requests|resource_exhausted|try again in|retry in/i;
 const DAILY = /per day|perday|daily|insufficient_quota|insufficient balance|credit balance is too low|request too large/i;
 const ACCOUNT = /free tier is not available|set up billing|billing to upgrade|upgrade to the paid tier|billing (?:is )?(?:not )?(?:enabled|required)|enable billing|account is not active|organization has been disabled/i;
-const FATAL = /401|402|403|invalid.*key|unauthorized|authentication|insufficient balance|insufficient_quota|credit balance is too low|payment required|not found|no longer available|not supported|request too large/i;
+const FATAL = /requires more credits|can only afford|401|402|403|invalid.*key|unauthorized|authentication|insufficient balance|insufficient_quota|credit balance is too low|payment required|not found|no longer available|not supported|request too large/i;
 
 function sleep(ms: number, signal: AbortSignal) {
   return new Promise<void>((resolve, reject) => {
@@ -75,7 +75,7 @@ export function friendlyError(m: string) {
     return 'One request is bigger than this key\'s per-minute limit (common with free keys). Pick another model with higher limits, or use a paid key. This is not a problem with your website.';
   if (/no longer available|not found|not supported|does not exist/i.test(m) && /model/i.test(m))
     return 'This model cannot be used with your key (the provider said it is not available). Start again and pick another model, ideally the one marked "recommended".';
-  if (/402|insufficient balance|insufficient_quota|credit balance is too low|insufficient credits|payment required/i.test(m))
+  if (/402|insufficient balance|insufficient_quota|credit balance is too low|insufficient credits|payment required|requires more credits|can only afford/i.test(m))
     return 'Your AI account has no credit left (the provider said: insufficient balance). Add credit on the provider\'s website, or start again with another key. This is not a problem with your website.';
   if (/overload|high demand|unavailable|503|529|try again later/i.test(m))
     return 'The AI provider is overloaded right now. This is temporary and not a problem with your website: try again in a few minutes, or pick another model (stable models are busy less often than preview ones).';
@@ -86,17 +86,39 @@ export function friendlyError(m: string) {
   return m.replace(/\s+/g, ' ').trim().slice(0, 240);
 }
 
-/** Asks the model for a JSON object matching the schema. Retries once with the error. */
+/** Pulls a JSON object out of model text (handles ```json fences and extra prose). */
+function salvageJson(text: string | undefined): unknown {
+  if (!text) return undefined;
+  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  const body = fenced ? fenced[1] : text;
+  const start = body.indexOf('{');
+  const end = body.lastIndexOf('}');
+  if (start < 0 || end <= start) return undefined;
+  try {
+    return JSON.parse(body.slice(start, end + 1));
+  } catch {
+    return undefined;
+  }
+}
+
+function schemaIssues(e: unknown): string {
+  const cause = (e as { cause?: { issues?: { path: (string | number)[]; message: string }[] } })?.cause;
+  const issues = cause?.issues;
+  if (!issues?.length) return errText(e);
+  return issues.slice(0, 5).map((i) => `${i.path.join('.') || 'root'}: ${i.message}`).join('; ');
+}
+
+/** Asks the model for a JSON object matching the schema. Salvages near-misses, retries with feedback. */
 export async function structured<S extends z.ZodType>(ctx: LlmCtx, task: string, prompt: string, schema: S): Promise<z.infer<S>> {
   let lastErr: unknown;
-  for (let attempt = 0; attempt < 2; attempt++) {
+  for (let attempt = 0; attempt < 3; attempt++) {
     if (ctx.run.abort.signal.aborted) throw new Error('Run stopped');
     try {
       const res = await withRetry(ctx, () =>
         generateText({
           model: ctx.model,
           instructions: ctx.instructions,
-          prompt: `TASK: ${task}\n\n${prompt}${attempt ? `\n\nYour previous answer could not be used (${errText(lastErr)}). Reply with valid JSON that matches the schema.` : ''}`,
+          prompt: `TASK: ${task}\n\n${prompt}${attempt ? `\n\nYour previous answer could not be used (${schemaIssues(lastErr)}). Reply with ONLY a valid JSON object that matches the schema exactly, with every field present.` : ''}`,
           output: Output.object({ schema }),
           reasoning: 'medium',
           maxOutputTokens: 8000,
@@ -112,6 +134,12 @@ export async function structured<S extends z.ZodType>(ctx: LlmCtx, task: string,
     } catch (e) {
       lastErr = e;
       if (ctx.run.abort.signal.aborted) throw new Error('Run stopped');
+      // Many models return almost-right JSON (wrapped in prose or code fences, or with small type
+      // slips). Our schemas fill defaults, so try to use what the model sent before asking again.
+      if (NoObjectGeneratedError.isInstance(e)) {
+        const parsed = schema.safeParse(salvageJson(e.text));
+        if (parsed.success) return parsed.data as z.infer<S>;
+      }
       if (ACCOUNT.test(String(e)) || FATAL.test(String(e)) || TRANSIENT.test(String(e)) || /429|rate limit/i.test(String(e))) throw new Error(errText(e));
     }
   }

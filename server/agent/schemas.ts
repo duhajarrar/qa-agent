@@ -1,21 +1,28 @@
 import { z } from 'zod';
 
+// Models (especially free/small ones) often leave out fields or send slightly wrong types.
+// These helpers fill sensible defaults instead of failing the whole run over one missing field.
+const str = (d = '') => z.string().default(d);
+const strs = () => z.array(z.string()).default([]);
+const bool = (d = false) => z.boolean().default(d);
+
 export const learnSchema = z.object({
-  productName: z.string().describe('Product name as the business uses it'),
-  summary: z.string().describe('2-4 sentences: what the product does and for whom'),
-  audience: z.string(),
-  businessGoals: z.array(z.string()).describe('Main business goals, e.g. sign-ups, bookings, payments'),
-  criticalJourneys: z.array(z.string()).describe('User journeys that serve the business goals'),
-  glossary: z.array(z.object({ term: z.string(), meaning: z.string() })).describe('Terms the product uses'),
-  gaps: z.array(z.string()).describe('Gaps or conflicts between docs, the live product and public info'),
+  productName: str('The product').describe('Product name as the business uses it'),
+  summary: str().describe('2-4 sentences: what the product does and for whom'),
+  audience: str(),
+  businessGoals: strs().describe('Main business goals, e.g. sign-ups, bookings, payments'),
+  criticalJourneys: strs().describe('User journeys that serve the business goals'),
+  glossary: z.array(z.object({ term: str(), meaning: str() })).default([]).describe('Terms the product uses'),
+  gaps: strs().describe('Gaps or conflicts between docs, the live product and public info'),
   questions: z
     .array(
       z.object({
-        question: z.string().describe('A short clarification question for the product owner'),
-        suggestions: z.array(z.string()).describe('2-3 short likely answers the user can click'),
-        defaultAnswer: z.string().describe('The answer you will assume if the user does not reply'),
+        question: str().describe('A short clarification question for the product owner'),
+        suggestions: strs().describe('2-3 short likely answers the user can click'),
+        defaultAnswer: str().describe('The answer you will assume if the user does not reply'),
       }),
     )
+    .default([])
     .describe('Only questions whose answer changes what you test. 0-4 questions.'),
 });
 
@@ -23,70 +30,74 @@ export const personasSchema = z.object({
   personas: z
     .array(
       z.object({
-        name: z.string().describe('Short persona name, e.g. "First-time shopper"'),
-        role: z.string().describe('Account role used to log in, or "Guest"'),
-        goals: z.string(),
-        skills: z.string().describe('Technical skill, device habits, patience, language'),
-        behaviors: z.string().describe('Likely mistakes and edge behavior'),
+        name: str('User').describe('Short persona name, e.g. "First-time shopper"'),
+        role: str('Guest').describe('Account role used to log in, or "Guest"'),
+        goals: str(),
+        skills: str().describe('Technical skill, device habits, patience, language'),
+        behaviors: str().describe('Likely mistakes and edge behavior'),
       }),
     )
+    .default([])
     .describe('2-5 personas'),
 });
 
 export const flowSchema = z.object({
-  steps: z.array(z.string()).describe('The main end-to-end journey as 5-12 short user steps, from first visit to the business goal'),
+  steps: strs().describe('The main end-to-end journey as 5-12 short user steps, from first visit to the business goal'),
   needed: z
-    .array(z.object({ label: z.string().describe('What you need, e.g. "Store admin password"'), secret: z.boolean() }))
+    .array(z.object({ label: str().describe('What you need, e.g. "Store admin password"'), secret: bool() }))
+    .default([])
     .describe('Inputs still missing to run the flow (accounts per role, test payment data, etc.). Empty if nothing is missing.'),
 });
 
 export const exploreSchema = z.object({
-  notes: z.array(z.string()).describe('What you observed while following the flow'),
-  missingSteps: z.array(z.string()).describe('Steps or screens missing from the flow'),
-  risks: z.array(z.string()).describe('Areas that look risky and deserve more tests'),
-  candidateIssues: z.array(z.string()).describe('Unexpected behavior worth a test case'),
+  notes: strs().describe('What you observed while following the flow'),
+  missingSteps: strs().describe('Steps or screens missing from the flow'),
+  risks: strs().describe('Areas that look risky and deserve more tests'),
+  candidateIssues: strs().describe('Unexpected behavior worth a test case'),
 });
 
 export const planSchema = z.object({
-  scopeIn: z.array(z.string()),
-  scopeOut: z.array(z.string()),
-  risks: z.array(z.string()),
-  assumptions: z.array(z.string()),
-  entryCriteria: z.array(z.string()),
-  exitCriteria: z.array(z.string()),
+  scopeIn: strs(),
+  scopeOut: strs(),
+  risks: strs(),
+  assumptions: strs(),
+  entryCriteria: strs(),
+  exitCriteria: strs(),
 });
 
 export const casesSchema = z.object({
-  cases: z.array(
-    z.object({
-      title: z.string().describe('Short title in business terms'),
-      persona: z.string().describe('One of the persona names'),
-      feature: z.string().describe('Feature or screen name in business terms'),
-      priority: z.enum(['High', 'Medium', 'Low']),
-      preconditions: z.string(),
-      steps: z.array(z.string()).describe('Numbered user steps, concrete and observable'),
-      testData: z.string().describe('Inputs used. Use {{secret:<Role>}} for passwords, never real values'),
-      expected: z.string().describe('Specific, observable expected result'),
-      source: z.string().describe('Where the expected result comes from: an acceptance criterion id, "Docs", or "Inferred"'),
-      unsure: z.boolean().describe('true when you are not confident about the expected result'),
-    }),
-  ),
+  cases: z
+    .array(
+      z.object({
+        title: str('Untitled test').describe('Short title in business terms'),
+        persona: str('User').describe('One of the persona names'),
+        feature: str('General').describe('Feature or screen name in business terms'),
+        priority: z.enum(['High', 'Medium', 'Low']).catch('Medium'),
+        preconditions: str(),
+        steps: strs().describe('Numbered user steps, concrete and observable'),
+        testData: str().describe('Inputs used. Use {{secret:<Role>}} for passwords of listed accounts, never real values'),
+        expected: str().describe('Specific, observable expected result'),
+        source: str('Inferred').describe('Where the expected result comes from: an acceptance criterion id, "Docs", or "Inferred"'),
+        unsure: bool().describe('true when you are not confident about the expected result'),
+      }),
+    )
+    .default([]),
 });
 
 export const bugSchema = z.object({
-  title: z.string().describe('Short title anyone can understand without reading details, in the business terms'),
-  severity: z.enum(['S1 Critical', 'S2 Major', 'S3 Minor', 'S4 Trivial']),
-  priority: z.enum(['Blocker', 'Critical', 'High', 'Medium', 'Low']),
-  businessImpact: z.string().describe('1-2 sentences: which business goal or critical journey this breaks and why it gets this severity/priority'),
-  description: z.string().describe('What happens, where, and why it matters'),
-  expected: z.string(),
-  actual: z.string(),
-  steps: z.array(z.string()).describe('Full reproduction steps starting from opening the product URL'),
+  title: str('Unexpected behavior').describe('Short title anyone can understand without reading details, in the business terms'),
+  severity: z.enum(['S1 Critical', 'S2 Major', 'S3 Minor', 'S4 Trivial']).catch('S3 Minor'),
+  priority: z.enum(['Blocker', 'Critical', 'High', 'Medium', 'Low']).catch('Medium'),
+  businessImpact: str().describe('1-2 sentences: which business goal or critical journey this breaks and why it gets this severity/priority'),
+  description: str().describe('What happens, where, and why it matters'),
+  expected: str(),
+  actual: str(),
+  steps: strs().describe('Full reproduction steps starting from opening the product URL'),
 });
 
 export const summarySchema = z.object({
-  headline: z.string().describe('One sentence verdict in plain business language'),
-  topRisks: z.array(z.string()).describe('Top 3 risks in plain business language'),
-  recommendations: z.array(z.string()),
-  notTested: z.array(z.string()).describe('Areas not tested and why'),
+  headline: str().describe('One sentence verdict in plain business language'),
+  topRisks: strs().describe('Top 3 risks in plain business language'),
+  recommendations: strs(),
+  notTested: strs().describe('Areas not tested and why'),
 });
