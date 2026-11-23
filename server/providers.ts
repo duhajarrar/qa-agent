@@ -24,6 +24,9 @@ export function createModel(provider: ProviderId | 'mock', apiKey: string, model
         baseURL: 'https://openrouter.ai/api/v1',
         apiKey,
         headers: { 'X-Title': 'QA Agent' },
+        // Without this the JSON schema is not sent at all ("responseFormat is not supported"),
+        // so models answer in their own shape. OpenRouter passes json_schema to models that support it.
+        supportsStructuredOutputs: true,
       })(modelId);
     case 'mock':
       if (process.env.ENABLE_MOCK_PROVIDER !== 'true') throw new Error('Mock provider is disabled');
@@ -156,7 +159,9 @@ export async function checkKey(provider: ProviderId, apiKey: string): Promise<Ke
     // Listing models does not prove the key can generate (billing, free-tier and quota problems
     // only show up on a real request), so send one tiny request now instead of failing mid-test.
     const probe = async (id: string) => {
-      await generateText({ model: createModel(provider, key, id), prompt: 'Reply with the word OK.', maxOutputTokens: 16, maxRetries: 0, timeout: 25000 });
+      // OpenRouter checks up front whether the account can afford the requested output size,
+      // so probe with the same size real test steps use (only the few tokens produced are billed).
+      await generateText({ model: createModel(provider, key, id), prompt: 'Reply with the word OK.', maxOutputTokens: provider === 'openrouter' ? 4000 : 16, maxRetries: 0, timeout: 25000 });
     };
     if (recommended) {
       try {

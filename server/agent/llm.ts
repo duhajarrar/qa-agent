@@ -1,5 +1,5 @@
 import { generateText, Output, isStepCount, hasToolCall, pruneMessages, NoObjectGeneratedError, type LanguageModel, type ToolSet } from 'ai';
-import type { z } from 'zod';
+import { z } from 'zod';
 import type { Run } from '../runs.js';
 
 export interface LlmCtx {
@@ -111,37 +111,62 @@ function schemaIssues(e: unknown): string {
 /** Asks the model for a JSON object matching the schema. Salvages near-misses, retries with feedback. */
 export async function structured<S extends z.ZodType>(ctx: LlmCtx, task: string, prompt: string, schema: S): Promise<z.infer<S>> {
   let lastErr: unknown;
+  let lastText = '';
+  const call = (attempt: number, plain: boolean) =>
+    withRetry(ctx, () =>
+      generateText({
+        model: ctx.model,
+        instructions: ctx.instructions,
+        prompt:
+          `TASK: ${task}\n\n${prompt}` +
+          (attempt ? `\n\nYour previous answer could not be used (${schemaIssues(lastErr)}).` : '') +
+          (plain
+            ? `\n\nReply with ONLY one JSON object, no other text, that follows this JSON schema:\n${JSON.stringify(z.toJSONSchema(schema, { io: 'input' }))}`
+            : attempt ? ' Reply with ONLY a valid JSON object that matches the schema exactly, with every field present.' : ''),
+        // Some providers/models mishandle "structured output" mode, so the last try asks in plain text.
+        ...(plain ? {} : { output: Output.object({ schema }) }),
+        reasoning: 'medium',
+        maxOutputTokens: 8000,
+        abortSignal: ctx.run.abort.signal,
+        maxRetries: 3,
+        timeout: { stepMs: STEP_TIMEOUT_MS },
+        onLanguageModelCallStart: () => ctx.run.aiWaiting(true),
+        onLanguageModelCallEnd: () => ctx.run.aiWaiting(false),
+      }),
+    );
+
   for (let attempt = 0; attempt < 3; attempt++) {
     if (ctx.run.abort.signal.aborted) throw new Error('Run stopped');
+    const plain = attempt === 2;
     try {
-      const res = await withRetry(ctx, () =>
-        generateText({
-          model: ctx.model,
-          instructions: ctx.instructions,
-          prompt: `TASK: ${task}\n\n${prompt}${attempt ? `\n\nYour previous answer could not be used (${schemaIssues(lastErr)}). Reply with ONLY a valid JSON object that matches the schema exactly, with every field present.` : ''}`,
-          output: Output.object({ schema }),
-          reasoning: 'medium',
-          maxOutputTokens: 8000,
-          abortSignal: ctx.run.abort.signal,
-          maxRetries: 3,
-          timeout: { stepMs: STEP_TIMEOUT_MS },
-          onLanguageModelCallStart: () => ctx.run.aiWaiting(true),
-          onLanguageModelCallEnd: () => ctx.run.aiWaiting(false),
-        }),
-      );
+      const res = await call(attempt, plain);
       ctx.run.addUsage(res.usage);
-      return res.output as z.infer<S>;
+      if (!plain) return (res as unknown as { output: z.infer<S> }).output;
+      lastText = res.text;
+      const parsed = schema.safeParse(salvageJson(res.text));
+      if (parsed.success) return parsed.data as z.infer<S>;
+      lastErr = new Error(`the reply was not valid JSON for this task: ${parsed.error.issues.slice(0, 3).map((i) => `${i.path.join('.') || 'root'}: ${i.message}`).join('; ')}`);
     } catch (e) {
       lastErr = e;
       if (ctx.run.abort.signal.aborted) throw new Error('Run stopped');
       // Many models return almost-right JSON (wrapped in prose or code fences, or with small type
       // slips). Our schemas fill defaults, so try to use what the model sent before asking again.
       if (NoObjectGeneratedError.isInstance(e)) {
+        lastText = e.text || lastText;
         const parsed = schema.safeParse(salvageJson(e.text));
         if (parsed.success) return parsed.data as z.infer<S>;
       }
       if (ACCOUNT.test(String(e)) || FATAL.test(String(e)) || TRANSIENT.test(String(e)) || /429|rate limit/i.test(String(e))) throw new Error(errText(e));
     }
+  }
+  // Last resort: keep the run going with empty defaults instead of failing everything,
+  // and say so plainly (the report will show what is missing).
+  const snippet = ctx.run.mask(lastText.replace(/\s+/g, ' ').trim().slice(0, 160));
+  console.warn(`[structured] ${task} failed: ${errText(lastErr)} | reply: ${snippet}`);
+  const fallback = schema.safeParse({});
+  if (fallback.success) {
+    ctx.run.log(`The AI's answer for "${task}" could not be read after 3 tries, so I continued without it.${snippet ? ` It replied: "${snippet}…"` : ' It sent an empty reply.'}`);
+    return fallback.data as z.infer<S>;
   }
   throw new Error(`The AI could not produce a valid answer for "${task}": ${errText(lastErr)}`);
 }
